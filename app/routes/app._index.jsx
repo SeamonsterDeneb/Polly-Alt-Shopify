@@ -5,6 +5,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { GoogleGenAI } from "@google/genai";
+import modalStyles from "../styles/triage-modal.css?url";
+
+export const links = () => [{ rel: "stylesheet", href: modalStyles }];
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -203,7 +206,9 @@ export default function Index() {
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [selectedModel, setSelectedModel] = useState("gemini-3.5-flash");
-  const [errorMessage, setErrorMessage] = useState(null); // Persistent structural warning states
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [editingAlt, setEditingAlt] = useState("");
+  const currentAltBoxRef = useRef(null);
 
   // Helper properties to calculate our continuous asset deck pointers
   const currentFileNode = files[currentFileIndex]?.node || null;
@@ -211,6 +216,7 @@ export default function Index() {
   const handleOpenTriage = (index) => {
     console.log("Input index target triggered:", index);
     setCurrentFileIndex(index);
+    setEditingAlt(files[index]?.node?.alt || "");
     setAiSuggestions([]); 
     setIsModalOpen(true);
 
@@ -235,7 +241,8 @@ export default function Index() {
 
     if (nextIndex < files.length) {
       setCurrentFileIndex(nextIndex);
-      setAiSuggestions([]); 
+      setEditingAlt(files[nextIndex]?.node?.alt || "");
+      setAiSuggestions([]);
 
       const nextFile = files[nextIndex]?.node;
       if (nextFile?.image?.url) {
@@ -345,7 +352,7 @@ export default function Index() {
           <s-section heading="Images Requiring Attention">
             <s-stack direction="block" gap="base">
               {files.length === 0 ? (
-                <s-paragraph>No images found. Go add some items to your store Content > Files library first!</s-paragraph>
+                <s-paragraph>No images found. Go add some items to your store Content &gt; Files library first!</s-paragraph>
               ) : (
                 files.map((edge) => {
                   const file = edge.node;
@@ -400,76 +407,71 @@ export default function Index() {
         </s-grid-item>
       </s-grid>
 
-      {/* 3. Polly Alt Continuous Triage Slide-Deck Dialog with Custom Backdrop */}
+      {/* 3. Polly Alt Continuous Triage Slide-Deck Dialog */}
       {isModalOpen && currentFileNode && (
-        <div 
-          onClick={() => setIsModalOpen(false)} // Close when clicking the backdrop
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0, 0, 0, 0.65)", // Dark semi-transparent overlay
-            backdropFilter: "blur(4px)", // Blurs the workspace behind the modal
-            zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center"
-          }}
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the dialog
-            style={{
-              width: "85vw",
-              maxWidth: "800px",
-              height: "80vh",
-              borderRadius: "8px",
-              boxShadow: "0px 20px 50px rgba(0, 0, 0, 0.3)",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              background: "#fff",
-              border: "1px solid #babfc3"
-            }}
-          >
-            {/* Cinema-Style Top Scrollable View Window Frame */}
-            <div style={{ 
-              width: "100%", 
-              height: "35vh", 
-              overflowY: "auto", 
-              background: "#111", 
-              flexShrink: 0,
-              display: "block"
-            }}>
-              <img 
-                src={currentFileNode.image?.url} 
-                alt="" 
-                style={{ width: "100%", height: "auto", display: "block" }} 
-              />
+        <div className="polly-modal-backdrop" onClick={() => setIsModalOpen(false)}>
+          <div className="polly-modal-dialog" onClick={(e) => e.stopPropagation()}>
+            
+            {/* Cinema-Style Center-Framed View Window */}
+            <div className="polly-modal-viewport">
+              <img src={currentFileNode.image?.url} alt="" className="polly-modal-image" />
             </div>
 
-            {/* Scrollable Choice & Action Workspace Area */}
-            <div style={{
-              flex: 1, 
-              overflowY: "auto", 
-              padding: "20px",
-              background: "#fff"
-            }}>
+            {/* Scrollable Workspace Area */}
+            <div className="polly-modal-workspace">
               <s-stack direction="block" gap="base">
                 
-                {/* Current Text Allocation Context block */}
-                <s-box padding="base" background="subdued" borderRadius="base" borderWidth="base">
-                  <s-stack direction="block" gap="small-100">
-                    <s-text type="strong">ORIGINAL DRAFT:</s-text>
-                    <s-text>{currentFileNode.alt || "None (Currently Empty)"}</s-text>
+                {/* 1. Control Bar */}
+                <div className="polly-control-bar">
+                  <s-button variant="tertiary" onClick={() => setIsModalOpen(false)}>Close Deck</s-button>
+                  <s-stack direction="inline" gap="base">
+                    <s-button onClick={() => handleNextImage(false)}>Next Image ➜</s-button>
+                    <s-button variant="primary" onClick={() => handleNextImage(true)}>Next Missing Alt ➜</s-button>
                   </s-stack>
-                </s-box>
+                </div>
 
-                {/* Dynamic Gemini Engine Selection Dropdown */}
-                <div style={{ display: "flex", gap: "12px", alignItems: "center", margin: "8px 0" }}>
+                {/* 2. Editable Current Alt Card */}
+                <div ref={currentAltBoxRef}>
+                  <s-box padding="base" background="subdued" borderRadius="base" borderWidth="base">
+                    <s-stack direction="block" gap="small">
+                      <div className="polly-header-flex">
+                        <s-text type="strong">CURRENT ALT TEXT:</s-text>
+                        <span style={{ color: "#6d7175", fontSize: "13px" }}>
+                          {editingAlt ? `(${editingAlt.length} characters)` : "No alt set yet"}
+                        </span>
+                      </div>
+
+                      <textarea
+                        className="polly-textarea"
+                        value={editingAlt}
+                        onChange={(e) => setEditingAlt(e.target.value)}
+                        placeholder="No alt text assigned yet. Type custom alt text or click an option below..."
+                        rows={3}
+                      />
+
+                      <div className="polly-flex-right">
+                        <s-button 
+                          variant="primary"
+                          onClick={() => {
+                            fetcher.submit(
+                              { intent: "save-alt", fileId: currentFileNode.id, altText: editingAlt },
+                              { method: "POST" }
+                            );
+                            shopify.toast.show("Saved custom alt text!");
+                          }}
+                        >
+                          Save Current Alt
+                        </s-button>
+                      </div>
+                    </s-stack>
+                  </s-box>
+                </div>
+
+                {/* 3. Engine Selection Dropdown */}
+                <div className="polly-flex-row">
                   <s-text type="strong">Optimization Intelligence:</s-text>
                   <select 
+                    className="polly-select"
                     value={selectedModel}
                     onChange={(e) => {
                       setSelectedModel(e.target.value);
@@ -478,14 +480,6 @@ export default function Index() {
                         { method: "POST" }
                       );
                     }}
-                    style={{
-                      padding: "6px 12px",
-                      border: "1px solid #babfc3",
-                      borderRadius: "4px",
-                      fontSize: "14px",
-                      background: "#fff",
-                      cursor: "pointer"
-                    }}
                   >
                     <option value="gemini-3.5-flash">Gemini 3.5 Flash (Standard Default)</option>
                     <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite (Eco Speed)</option>
@@ -493,20 +487,16 @@ export default function Index() {
                   </select>
                 </div>
 
-                {/* Interactive Option Cards Selection Track Layout */}
+                {/* 4. AI Options List */}
                 <s-heading>Polly Suggested Formats</s-heading>
                 <s-stack direction="block" gap="base">
                   
-                  {/* Visual loading indicator card while Gemini is analyzing */}
                   {fetcher.state === "submitting" && (
                     <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
                       <s-stack direction="inline" gap="base" alignItems="center">
-                        <div className="spinner" style={{
-                          border: "3px solid #f3f3f3",
-                          borderTop: "3px solid #3498db",
-                          borderRadius: "50%",
-                          width: "20px",
-                          height: "20px",
+                        <div style={{
+                          border: "3px solid #f3f3f3", borderTop: "3px solid #3498db",
+                          borderRadius: "50%", width: "20px", height: "20px",
                           animation: "spin 1s linear infinite"
                         }} />
                         <s-text>Polly is studying your image details...</s-text>
@@ -514,21 +504,17 @@ export default function Index() {
                     </s-box>
                   )}
 
-                  {/* Display Live suggestions once loaded */}
                   {fetcher.state !== "submitting" && !errorMessage && aiSuggestions.length > 0 ? (
                     aiSuggestions.map((choice, i) => (
                       <s-box key={i} padding="base" borderWidth="base" borderRadius="base" background="base">
                         <s-stack direction="block" gap="small-100">
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div className="polly-header-flex">
                             <span style={{ fontWeight: "bold", color: "#008060" }}>AI OPTION {i + 1}</span>
                             <span style={{ color: "#6d7175", fontSize: "13px" }}>({choice.alt.length} characters)</span>
                           </div>
                           <s-text>{choice.alt}</s-text>
                           <s-text type="italic" color="subdued">Focus: {choice.focus} — {choice.explanation}</s-text>
-                          <s-button 
-                            variant="secondary" 
-                            onClick={() => handleApplyAlt(choice.alt)}
-                          >
+                          <s-button variant="secondary" onClick={() => handleApplyAlt(choice.alt)}>
                             Apply This Option
                           </s-button>
                         </s-stack>
@@ -540,29 +526,29 @@ export default function Index() {
                     )
                   )}
 
-                  {/* Persistent Error Message Container Box */}
                   {errorMessage && (
                     <s-box padding="base" background="subdued" borderWidth="base" borderColor="critical" borderRadius="base">
                       <s-stack direction="block" gap="base">
-                        <s-text type="strong" color="critical">⚠️ Engine Error Notice</s-text>
+                        <s-text type="strong" color="critical">⚠️ Engine Notice</s-text>
                         <s-text>{errorMessage}</s-text>
-                        <div>
+                        <s-stack direction="inline" gap="base">
+                          <s-button 
+                            variant="primary" 
+                            onClick={() => {
+                              setErrorMessage(null);
+                              fetcher.submit(
+                                { intent: "analyze-image", imageUrl: currentFileNode.image?.url, model: selectedModel },
+                                { method: "POST" }
+                              );
+                            }}
+                          >
+                            🔄 Retry Generation
+                          </s-button>
                           <s-button onClick={() => setErrorMessage(null)}>Dismiss & Clear</s-button>
-                        </div>
+                        </s-stack>
                       </s-stack>
                     </s-box>
                   )}
-                </s-stack>
-
-                <hr style={{ border: "none", borderTop: "1px solid #e1e3e5", margin: "16px 0" }} />
-
-                {/* Flow Control Slide Bar */}
-                <s-stack direction="inline" justify="space-between" alignItems="center">
-                  <s-button variant="tertiary" onClick={() => setIsModalOpen(false)}>Close Deck</s-button>
-                  <s-stack direction="inline" gap="base">
-                    <s-button onClick={() => handleNextImage(false)}>Next Image ➜</s-button>
-                    <s-button variant="primary" onClick={() => handleNextImage(true)}>Next Missing Alt ➜</s-button>
-                  </s-stack>
                 </s-stack>
 
               </s-stack>
